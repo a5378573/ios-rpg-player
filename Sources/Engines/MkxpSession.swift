@@ -192,14 +192,15 @@ final class MkxpSession {
         callbacksInstalled = true
 
         let context = Unmanaged.passUnretained(self).toOpaque()
-        let callbacks = RPGCallbacks(
+        // C 侧会整体拷贝一份，所以这里的 var 只要活到调用结束即可。
+        var callbacks = RPGCallbacks(
             onTerminated: mkxpTerminatedTrampoline,
             onError: mkxpErrorTrampoline,
             onInfo: mkxpInfoTrampoline,
             onFrameRendered: nil,
             context: context
         )
-        rpg_set_callbacks(callbacks)
+        rpg_set_callbacks(&callbacks)
     }
 
     // MARK: - 事件（引擎线程 → 主线程）
