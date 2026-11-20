@@ -1,0 +1,49 @@
+// 引擎的链接参数。
+//
+// 这份清单来自引擎发布包里的 LINK 文件（v24 / ANGLE angle-2026-11-19），
+// 只把两处相对路径换成了本工程的绝对路径：
+//   -Wl,-force_load,lib/libmkxpz-core.a  → $(MKXP_LIB_DIR)/libmkxpz-core.a
+//   -Llib                                → LIBRARY_SEARCH_PATHS
+//
+// 为什么用 -force_load：链接器默认只挑「被引用到的」目标文件，
+// 而 app_bridge.h 里绝大多数函数没有任何地方直接引用，会被整个丢掉。
+// 三个 mkxpNN-merged.o 是三个 Ruby 版本的 binding，符号被隐藏，
+// 靠 _mkxp_get_script_binding_NN 分派，也必须整份载入。
+
+MKXP_ROOT = $(SRCROOT)/Vendor/mkxp
+MKXP_SDK_DIR = $(MKXP_ROOT)/$(PLATFORM_NAME)
+MKXP_LIB_DIR = $(MKXP_SDK_DIR)/lib
+ANGLE_LIB_DIR = $(SRCROOT)/Vendor/angle/$(PLATFORM_NAME)/lib
+
+HEADER_SEARCH_PATHS = $(inherited) $(MKXP_ROOT)/include $(SRCROOT)/Sources/Engines/Host
+
+LIBRARY_SEARCH_PATHS = $(inherited) $(MKXP_LIB_DIR) $(ANGLE_LIB_DIR)
+
+OTHER_LDFLAGS = $(inherited) \
+  -Wl,-force_load,$(MKXP_LIB_DIR)/libmkxpz-core.a \
+  $(MKXP_LIB_DIR)/mkxp18-merged.o \
+  $(MKXP_LIB_DIR)/mkxp19-merged.o \
+  $(MKXP_LIB_DIR)/mkxp31-merged.o \
+  -lSDL2 -lSDL2_image -lSDL2_sound -lSDL2_ttf \
+  -lfreetype -lpixman-1 \
+  -logg -lvorbis -lvorbisfile -ltheora -ltheoradec \
+  -lphysfs -luchardet -lopenal -lfluidsynth \
+  -lssl -lcrypto -lz -lbz2 -liconv \
+  -lANGLE_static -lEGL_static -lGLESv2_static \
+  -framework Foundation -framework UIKit -framework CoreFoundation \
+  -framework CoreGraphics -framework CoreVideo -framework CoreAudio \
+  -framework AudioToolbox -framework AVFoundation -framework Metal \
+  -framework QuartzCore -framework GameController -framework CoreMotion \
+  -framework IOSurface \
+  -weak_framework CoreBluetooth -weak_framework CoreHaptics
+
+// 引擎的 app_bridge.h 用 TargetConditionals 判断平台，
+// 并在 iOS 上把接口切成实时版；这里确保宏存在。
+GCC_PREPROCESSOR_DEFINITIONS = $(inherited) MKXPZ_MOBILE=1
+
+// 构建脚本要读 Vendor/ 下的引擎（在 target 目录之外），
+// 沙箱会拦住，必须关掉。
+ENABLE_USER_SCRIPT_SANDBOXING = NO
+
+// 引擎的静态库是 arm64 + arm64-simulator，不需要 x86_64 模拟器。
+EXCLUDED_ARCHS[sdk=iphonesimulator*] = i386 x86_64

@@ -1,0 +1,20 @@
+# 默认按原样存储，由下面的规则覆盖
+* text=auto
+
+# 脚本与配置必须是 LF，否则在 macOS runner 上会因 CRLF 报错
+*.sh            text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.xcconfig      text eol=lf
+*.h             text eol=lf
+*.m             text eol=lf
+*.mm            text eol=lf
+*.swift         text eol=lf
+project.yml     text eol=lf
+
+# 二进制资源不要做任何转换
+*.png           binary
+*.jpg           binary
+*.a             binary
+*.o             binary
+*.tar.gz        binary

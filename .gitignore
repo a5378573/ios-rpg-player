@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# 构建产物
+Payload/
+*.ipa
+build.log
+
+# 依赖
+Vendor/
+Vendor/**
+.swiftpm/
+Package.resolved
+
+# 引擎源码（体积大，按需拉取）
+EngineSources/
+
+# 拉取引擎时的临时工作目录
+.build/

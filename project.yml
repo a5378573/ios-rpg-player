@@ -1,0 +1,104 @@
+name: RPGPlayer
+options:
+  bundleIdPrefix: com.local
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: true
+
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: 0.9.16
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    ENABLE_BITCODE: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  RPGPlayer:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Resources/Assets.xcassets
+    configFiles:
+      Debug: Config/Engine.xcconfig
+      Release: Config/Engine.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.rpgplayer
+        PRODUCT_NAME: RPGPlayer
+        INFOPLIST_FILE: Resources/Info.plist
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "2"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+
+        # C 桥接层：Swift 只看到 RPGEngineHost.h
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/Support/RPGPlayer-Bridging-Header.h
+
+        # 引擎已链接时打开，留给以后做「无引擎构建」的条件编译；
+        # 当前的降级判断走 rpg_engine_available() 的运行时检查。
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) MKXPZ_AVAILABLE"
+
+        # 引擎静态库较大，Debug 也保持 -O0 便于定位崩溃；
+        # 若编译太慢可改成 -Onone。
+        SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+        GCC_OPTIMIZATION_LEVEL: "0"
+        ONLY_ACTIVE_ARCH: NO
+
+        # 引擎会从 .app 根目录找 Assets.bundle 与 Ruby/，
+        # 这两个目录必须原样拷进去，不能被拍平。
+        COPY_PHASE_STRIP: NO
+    dependencies:
+      - package: ZIPFoundation
+    preBuildScripts:
+      - name: 检查引擎是否已拉取
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          if [ ! -f "${SRCROOT}/Vendor/mkxp/include/app_bridge.h" ] || \
+             [ ! -f "${SRCROOT}/Vendor/mkxp/${PLATFORM_NAME}/lib/libmkxpz-core.a" ]; then
+            echo "error: 还没有引擎二进制。" >&2
+            echo "  在 ios-rpg-player 目录执行：sh Scripts/fetch_engine.sh" >&2
+            exit 1
+          fi
+    postBuildScripts:
+      - name: 拷贝引擎运行时资源
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          SRC="${SRCROOT}/Vendor/mkxp"
+          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          SDK_DIR="${SRC}/${PLATFORM_NAME}"
+
+          if [ ! -d "${SRC}" ] || [ ! -d "${SDK_DIR}" ]; then
+            echo "error: 找不到引擎，先执行 Scripts/fetch_engine.sh" >&2
+            exit 1
+          fi
+
+          # 引擎用 dladdr 定位自己旁边的 Assets.bundle 和 Ruby/，
+          # 因此这两个目录必须落在 .app 根目录，名字不能改。
+          rm -rf "${DEST}/Assets.bundle" "${DEST}/Ruby"
+          cp -R "${SRC}/assets" "${DEST}/Assets.bundle"
+          cp -R "${SDK_DIR}/ruby-stdlib" "${DEST}/Ruby"
+
+          echo "已写入引擎运行时资源："
+          du -sh "${DEST}/Assets.bundle" "${DEST}/Ruby" | sed 's/^/  /'
+
+schemes:
+  RPGPlayer:
+    build:
+      targets:
+        RPGPlayer: all
+    run:
+      config: Debug
+    archive:
+      config: Release

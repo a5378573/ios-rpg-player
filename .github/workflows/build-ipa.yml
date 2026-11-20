@@ -1,0 +1,123 @@
+name: Build unsigned IPA
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'ios-rpg-player/**'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: ios-rpg-player
+
+env:
+  # 引擎与 ANGLE 的版本要和 Scripts/fetch_engine.sh 里的 pin 保持一致，
+  # 缓存 key 用它们拼，升级引擎时缓存会自动失效。
+  ENGINE_VERSION: v24
+  ANGLE_VERSION: angle-2026-11-19
+
+jobs:
+  build:
+    # 引擎的静态库是用 iOS 26.5 SDK 编的（ANGLE 用的 27.2），
+    # 必须用新镜像 + 新 Xcode，否则会在链接期报「新 SDK 编译的目标文件」。
+    # macos-14 已于 2026-11-02 退役，不要再改回去。
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          LATEST="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          echo "使用 $LATEST"
+          sudo xcode-select -s "$LATEST"
+          xcodebuild -version
+
+      # 引擎包 80 MB + ANGLE 31 MB，每次重下太慢，按版本号缓存。
+      - name: Cache engine binaries
+        uses: actions/cache@v4
+        with:
+          path: ios-rpg-player/Vendor
+          key: rpgplayer-engine-${{ env.ENGINE_VERSION }}-${{ env.ANGLE_VERSION }}
+
+      - name: Fetch mkxp engine
+        run: |
+          chmod +x Scripts/*.sh
+          sh Scripts/fetch_engine.sh
+
+      - name: Verify engine layout
+        run: |
+          test -f Vendor/mkxp/include/app_bridge.h
+          test -f Vendor/mkxp/iphoneos/lib/libmkxpz-core.a
+          test -f Vendor/angle/iphoneos/lib/libANGLE_static.a
+          cat Vendor/mkxp/MANIFEST
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project RPGPlayer.xcodeproj \
+            -scheme RPGPlayer
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project RPGPlayer.xcodeproj \
+            -scheme RPGPlayer \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=NO \
+            ARCHS=arm64 \
+            | tee build.log
+
+      - name: Check bundled runtime
+        run: |
+          APP_PATH="build/Build/Products/Release-iphoneos/RPGPlayer.app"
+          test -d "$APP_PATH/Assets.bundle" || { echo "缺少 Assets.bundle"; exit 1; }
+          test -d "$APP_PATH/Ruby" || { echo "缺少 Ruby/"; exit 1; }
+          du -sh "$APP_PATH" "$APP_PATH/Assets.bundle" "$APP_PATH/Ruby"
+          # 三个 Ruby binding 必须都在二进制里，否则 VX Ace 起不来
+          nm -a "$APP_PATH/RPGPlayer" 2>/dev/null | grep -c 'mkxp_get_script_binding' || true
+
+      - name: Package IPA
+        run: |
+          APP_PATH="build/Build/Products/Release-iphoneos/RPGPlayer.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "没有找到构建产物：$APP_PATH"
+            find build/Build/Products -maxdepth 2 -type d
+            exit 1
+          fi
+          rm -rf Payload RPGPlayer-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry RPGPlayer-unsigned.ipa Payload
+          ls -lh RPGPlayer-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: RPGPlayer-unsigned-ipa
+          path: ios-rpg-player/RPGPlayer-unsigned.ipa
+          retention-days: 14
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: ios-rpg-player/build.log
+          retention-days: 7
