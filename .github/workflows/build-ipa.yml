@@ -34,17 +34,20 @@ jobs:
           sudo xcode-select -s "$LATEST"
           xcodebuild -version
 
-      # 引擎包 80 MB + ANGLE 31 MB，每次重下太慢，按版本号缓存。
-      - name: Cache engine binaries
-        uses: actions/cache@v4
-        with:
-          path: Vendor
-          key: rpgplayer-engine-${{ env.ENGINE_VERSION }}-${{ env.ANGLE_VERSION }}
-
+      # 不再用 actions/cache：命中过一次后 fetch 步骤 0 秒退出 1，
+      # 恢复出来的 Vendor 与脚本的 pin 校验对不上。110 MB 从 GitHub
+      # 自己的 release 拉只要几秒，去掉缓存反而更稳。
       - name: Fetch mkxp engine
         run: |
+          set -o pipefail
           chmod +x Scripts/*.sh
-          sh Scripts/fetch_engine.sh
+          if sh Scripts/fetch_engine.sh 2>&1 | tee fetch.log; then
+            echo "引擎拉取完成"
+            exit 0
+          fi
+          echo "===== 拉取引擎失败，下面是日志 ====="
+          tail -50 fetch.log | while IFS= read -r line; do echo "::error::$line"; done
+          exit 1
 
       - name: Verify engine layout
         run: |
@@ -127,5 +130,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: build.log
+          path: |
+            build.log
+            fetch.log
           retention-days: 7
+          if-no-files-found: ignore
