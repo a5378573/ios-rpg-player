@@ -3,13 +3,10 @@ name: Build unsigned IPA
 on:
   push:
     branches: [ main, master ]
-    paths:
-      - 'ios-rpg-player/**'
   workflow_dispatch:
 
-defaults:
-  run:
-    working-directory: ios-rpg-player
+# 仓库根目录就是这个工程本身，所有命令直接在根下执行，
+# 不要再加 working-directory: ios-rpg-player（那个子目录不存在）。
 
 env:
   # 引擎与 ANGLE 的版本要和 Scripts/fetch_engine.sh 里的 pin 保持一致，
@@ -41,7 +38,7 @@ jobs:
       - name: Cache engine binaries
         uses: actions/cache@v4
         with:
-          path: ios-rpg-player/Vendor
+          path: Vendor
           key: rpgplayer-engine-${{ env.ENGINE_VERSION }}-${{ env.ANGLE_VERSION }}
 
       - name: Fetch mkxp engine
@@ -111,7 +108,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: RPGPlayer-unsigned-ipa
-          path: ios-rpg-player/RPGPlayer-unsigned.ipa
+          path: RPGPlayer-unsigned.ipa
           retention-days: 14
 
       - name: Upload build log on failure
@@ -119,5 +116,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: ios-rpg-player/build.log
+          path: build.log
           retention-days: 7
